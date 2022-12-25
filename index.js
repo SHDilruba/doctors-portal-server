@@ -35,6 +35,7 @@ async function run(){
           const appointmentOptionCollection = client.db('doctors-portal').collection('appointmentOption');
            const bookingsCollection = client.db('doctors-portal').collection('bookings');
            const usersCollection = client.db('doctors-portal').collection('users');
+           const doctorsCollection = client.db('doctors-portal').collection('doctors');
 
           app.get ('/appointmentOptions', async(req, res) =>{
             const date = req.query.date;
@@ -43,20 +44,24 @@ async function run(){
 
               const bookingQuery = {appointmentDate: date}
               const alreadyBooked = await bookingsCollection.find(bookingQuery).toArray();
+
               options.forEach(option => {
                    const optionBooked = alreadyBooked.filter(book => book.treatment === option.name);
                    const bookedSlots = optionBooked.map(book => book.slot)
                    const remainingSlots = option.slots.filter(slot => !bookedSlots.includes(slot));
-                   option.slots =  remainingSlots;
+                   option.slots = remainingSlots;
               })
               res.send(options);
+          });
+
+          app.get('/appointmentSpecialty', async(req, res) =>{
+            const query = {}
+            const result = await appointmentOptionCollection.find(query).project({name: 1}).toArray();
+            res.send(result);
           });
     
           app.get('/bookings', verifyJWT, async(req, res) =>{
                 const email = req.query.email;
-
-          // app.get('/bookings', async(req, res) =>{
-          //       const email = req.query.email;
                 const decodedEmail = req.decoded.email;
 
                 if(email !== decodedEmail){
@@ -106,16 +111,31 @@ async function run(){
             res.send(users);
           });
 
+          app.get('/users/admin/:email', async(req, res) =>{
+              const email = req.params.email;
+              const query = { email }
+              const user = await usersCollection.findOne(query);
+              res.send({isAdmin: user?.role === 'admin'});
+          });
+
           app.post('/users', async(req, res) =>{
               const user = req.body;
               const result = await usersCollection.insertOne(user);
               res.send(result);
           });
 
-          app.put('/users/:admin/:id', async(req, res) =>{
+          app.put('/users/:admin/:id', verifyJWT, async(req, res) =>{
+            const decodedEmail = req.decoded.email;
+            const query = {email: decodedEmail};
+            const user = await usersCollection.findOne(query);
+
+            if(user?.role !== 'admin'){
+               return res.status(403).send({message: 'forbiden access'})
+            }
+
             const id = req.params.id;
             const filter = { _id: ObjectId(id) }
-            const options: { upsert: true };
+            const options = { upsert: true };
             const updatedDoc = {
               $set: {
                 role: 'admin'
@@ -123,6 +143,18 @@ async function run(){
             }
             const result = await usersCollection.updateOne(filter, updatedDoc, options);
             res.send(result);
+       });
+
+       app.get('/doctors', async(req, res) =>{
+          const query = {};
+          const doctors = await doctorsCollection.find(query).toArray();
+          res.send(doctors);
+       })
+
+       app.post('/doctors', async(req, res)=>{
+           const doctor = req.body;
+           const result = await doctorsCollection.insertOne(doctor);
+           res.send(result);
        })
      }
      finally{
